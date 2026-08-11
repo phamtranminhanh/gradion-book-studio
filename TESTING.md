@@ -30,7 +30,7 @@ The browser itself is intentionally thin, so `tests/ui.test.js` tests the state-
 
 I did not add browser E2E automation, visual snapshots, or live Gemini tests. E2E is outside the required scope, visual snapshots would be brittle for a small take-home, and live Gemini tests would be slow, nondeterministic, and consume the candidate/reviewer quota. The REST adapter is kept small and follows Google's current request shapes; the state/cost logic around it is covered with the mock.
 
-A useful next integration test would boot the HTTP server in mock mode and drive all five routes through `fetch`. For this implementation I instead performed a real local smoke run: the app served successfully, the first `STYLE` request returned HTTP 202, an immediate duplicate returned 409, and the project then persisted step 1 and advanced to `CHARACTERS`.
+I also performed real local HTTP smoke runs in mock mode. The duplicate-start check served the app, returned HTTP 202 for the first `STYLE` request, returned 409 for an immediate duplicate, and then persisted step 1. A second end-to-end run drove `STYLE → CHARACTERS → PORTRAITS → CHAPTERS → ILLUSTRATIONS` through the HTTP API; every step advanced exactly once and the final project was `DONE` with 2 saved portraits and 1 saved chapter illustration.
 
 ## Real test report
 
