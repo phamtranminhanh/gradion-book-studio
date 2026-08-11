@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Book Illustration Studio</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div id="app" aria-live="polite"></div>
+
+  <div id="book-modal" class="modal-overlay" hidden>
+    <section class="modal-box" role="dialog" aria-modal="true" aria-labelledby="book-modal-title">
+      <header class="modal-head">
+        <div><p class="eyebrow">Source text</p><h2 id="book-modal-title">Full book text</h2></div>
+        <button class="icon-btn" type="button" data-action="close-book" aria-label="Close book text">×</button>
+      </header>
+      <div id="book-modal-body" class="modal-body"></div>
+    </section>
+  </div>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
