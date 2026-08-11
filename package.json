@@ -8,9 +8,6 @@
     "start": "node src/server.js",
     "test": "node --test --test-reporter=spec tests/*.test.js"
   },
-  "dependencies": {
-    "@google/genai": "2.13.0"
-  },
   "engines": {
     "node": ">=22"
   }
