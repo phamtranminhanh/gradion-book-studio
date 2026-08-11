@@ -13,13 +13,14 @@ export class KeyedMutex {
     const previous = this.tails.get(key) ?? Promise.resolve();
     let release;
     const current = new Promise((resolve) => { release = resolve; });
-    this.tails.set(key, previous.then(() => current));
+    const tail = previous.then(() => current);
+    this.tails.set(key, tail);
     await previous;
     try {
       return await fn();
     } finally {
       release();
-      if (this.tails.get(key) === current) this.tails.delete(key);
+      if (this.tails.get(key) === tail) this.tails.delete(key);
     }
   }
 }
@@ -184,7 +185,7 @@ export class Store {
       const project = await this.#readJson(path.join(this.projectsDir, file), null);
       if (project?.ownerId === ownerId) projects.push(project);
     }
-    return projects.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(structuredClone);
+    return projects.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map((project) => structuredClone(project));
   }
 
   async withProject(projectId, fn) {

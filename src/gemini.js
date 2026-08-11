@@ -47,7 +47,7 @@ async function readError(response) {
 }
 
 export class GeminiRestClient {
-  constructor({ apiKey, textModel = 'gemini-3.6-flash', imageModel = 'gemini-3.1-flash-image', timeoutMs = 180_000 }) {
+  constructor({ apiKey, textModel = 'gemini-3.6-flash', imageModel = 'gemini-3.1-flash-lite-image', timeoutMs = 180_000 }) {
     if (!apiKey) throw new Error('GEMINI_API_KEY is required for real Gemini calls.');
     this.apiKey = apiKey;
     this.textModel = textModel;
@@ -110,7 +110,7 @@ export class GeminiRestClient {
       model: this.textModel,
       input: [
         { type: 'text', text: "Here's a book to illustrate using Nano Banana. Don't say anything for now; instructions will follow." },
-        { type: 'document', uri: fileUri, mime_type: mimeType },
+        { type: 'document', uri: fileUri },
       ],
     });
   }
@@ -163,7 +163,7 @@ export class GeminiRestClient {
       model: this.imageModel,
       input: `Create a portrait illustration for ${character.name} following this description: ${character.prompt}`,
       previous_interaction_id: previousId,
-      response_format: { type: 'image', mime_type: 'image/png', aspect_ratio: '9:16', image_size: '1K' },
+      response_format: { type: 'image', mime_type: 'image/jpeg', aspect_ratio: '9:16', image_size: '1K' },
     });
     const image = outputImage(interaction);
     if (!image) throw new Error(`Gemini returned no portrait image for ${character.name}.`);
@@ -211,7 +211,7 @@ export class GeminiRestClient {
       model: this.imageModel,
       input: `Create a chapter illustration for ${chapter.name} using the previously generated characters and this description: ${chapter.prompt}`,
       previous_interaction_id: previousId,
-      response_format: { type: 'image', mime_type: 'image/png', aspect_ratio: '16:9', image_size: '1K' },
+      response_format: { type: 'image', mime_type: 'image/jpeg', aspect_ratio: '16:9', image_size: '1K' },
     });
     const image = outputImage(interaction);
     if (!image) throw new Error(`Gemini returned no chapter illustration for ${chapter.name}.`);
@@ -248,9 +248,12 @@ const tinyPngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42
 
 export function makeGeminiFromEnv(env = process.env) {
   if (String(env.GEMINI_MOCK).toLowerCase() === 'true') return new MockGeminiClient({ delayMs: 700 });
+  if (!env.GEMINI_API_KEY) {
+    return new Proxy({}, { get() { return async () => { throw new Error('GEMINI_API_KEY is not configured. Copy .env.example to .env and add your key, or set GEMINI_MOCK=true for an offline UI demo.'); }; } });
+  }
   return new GeminiRestClient({
     apiKey: env.GEMINI_API_KEY,
     textModel: env.GEMINI_TEXT_MODEL || 'gemini-3.6-flash',
-    imageModel: env.GEMINI_IMAGE_MODEL || 'gemini-3.1-flash-image',
+    imageModel: env.GEMINI_IMAGE_MODEL || 'gemini-3.1-flash-lite-image',
   });
 }
