@@ -1,31 +1,162 @@
-# Engineering decisions
+# Engineering Decisions
 
-> **Candidate review note:** this file is an AI-assisted factual draft based on the implementation session. The assessment asks for decisions in the candidate's own words. Before submitting, read the code, challenge these choices yourself, and rewrite any sentence that does not reflect a decision you personally reviewed. Do not claim an override you did not make.
+This file records the main decisions I made while building the Gradion Book Illustration Studio. I used ChatGPT as a coding assistant during the project, but I still reviewed the suggestions and changed some of them when I felt they did not fit the assessment well.
 
-## One Node process and no framework dependencies
+## 1. Keep the architecture small
 
-ChatGPT initially considered a conventional React + Express + database stack because it is a familiar full-stack default. After reading the “keep it simple and lean” requirement, the implementation deliberately moved the other way: Node's built-in HTTP server, browser ES modules, and plain CSS. The main reason is that the assessed complexity is pipeline correctness, not routing/build-tool setup, and one process makes the start command and local filesystem behavior very easy to review. The cost is less framework ergonomics and more hand-written HTTP/rendering code; if the UI grew beyond this bounded assessment, I would introduce a component framework rather than keep expanding string templates. **AI override #1: rejected the initially overbuilt stack.**
+At first, a more common full-stack setup such as React for the frontend, Express for the backend, and a database was considered. I decided not to use that approach because I felt it would add more setup than the project really needed.
 
-## JSON files with atomic writes instead of a database
+The final project uses one Node.js process for the API and static frontend, while the browser side is built with plain JavaScript and CSS.
 
-The first implementation question was whether resumability automatically implied SQLite/Postgres. It does not at this scope. Each project is an isolated JSON document, the source text and images already have to live on disk, and writes go through a per-key mutex plus temp-file/rename atomic replacement. This keeps the persisted state inspectable during review and avoids a migration layer for a handful of local entities. The accepted limit is important: the mutex protects one Node process, not several processes sharing a directory. A production multi-instance service would need a real transactional store or cross-process locking.
+My main reason was that the difficult part of this assessment is not choosing a framework. The important part is making the five-step pipeline correct, resumable, and safe from duplicate Gemini calls. Using one small Node service also makes the project easier to run and easier for the reviewer to understand.
 
-## Separate durable completion from active run state
+The disadvantage is that I had to write more of the HTTP handling and UI rendering myself. If this project became much larger, I would probably move the frontend to a component framework.
 
-A single project `status` value looked simpler at first, but it cannot represent both “which prefix of the five steps is safely complete” and “what is happening right now.” The implementation therefore stores `completedStep` separately from `run.state/run.step/run.startedAt/run.attempt`. UI status is derived. This is what makes a refresh during Chapter generation unambiguous: Portraits can remain durably complete while Chapters is still `RUNNING`. The cost is a slightly richer invariant that the state-machine tests must protect.
+**AI override #1:** ChatGPT first considered a more conventional React + Express + database stack. I rejected it because I thought it was unnecessary for the size of this assessment.
 
-## The duplicate guard belongs on the server, before Gemini
+---
 
-The supplied demo prevents a second click inside one browser state. That is useful UX but not cost protection: another tab, a refresh, or two near-simultaneous requests can bypass it. The implementation writes the `RUNNING` marker while holding the project's server-side mutex **before** scheduling the external call; a competing request sees that marker and gets HTTP 409. I rejected an AI temptation to rely on disabling the button/polling state because that would only make the race less visible, not correct. The trade-off is that a process crash can leave `RUNNING` persisted, so the same design also needs explicit stale recovery. **AI override #2: browser-only duplicate protection was rejected as unsafe for API cost.**
+## 2. Use local JSON files instead of a database
 
-## Persist external checkpoints and partial images immediately
+I chose local filesystem storage for users, sessions, project state, book text, and generated images.
 
-It would be simpler to hold a whole step's result in memory and write once at the end. That is wrong for the resume requirement. The upload URI, initial book interaction ID, style/character interaction IDs, image-chain ID, and each image URL are saved as soon as they exist. If portrait 2 fails after portrait 1 succeeded, retry skips portrait 1 and continues from persisted state. The extra writes are trivial at a maximum of two portraits and one chapter, while the benefit is less duplicate Gemini spend and visible per-item progress.
+For this project, I did not think a database was necessary. There are only a small number of local users and projects, and the application is not meant to be deployed as a multi-server production system.
 
-## Direct REST calls, and explicitly no automatic retry
+Project JSON writes are done using a temporary file followed by rename, so the project file is not left half-written if something goes wrong during a write. I also use a per-project mutex when changing project state so two requests cannot update the same project at the same time.
 
-ChatGPT first attempted to use the official `@google/genai` package. Package installation was not reliable in the build environment, and the assessment explicitly notes that the notebook's calls can be mapped to documented REST endpoints. The implementation therefore uses `fetch` against the Files API and Interactions API, while keeping model IDs in environment variables. This also made one assessment-specific override obvious: Google's notebook configures SDK HTTP retries, but this assessment says Gemini calls must never be auto-retried. The REST adapter makes exactly one request per user-triggered attempt and surfaces errors back into the persisted failed state. The cost is maintaining a small amount of request/response parsing ourselves. **AI override #3: SDK/automatic-retry behavior was replaced with single-attempt REST calls.**
+The main limitation is that this locking approach only protects one Node process. If the system had multiple backend instances, I would replace this with a proper transactional database or another shared locking mechanism.
 
-## If I had one more day
+---
 
-I would add Server-Sent Events for project updates. Polling every 1.5 seconds is intentionally simple and correct here, but SSE would make portrait/illustration arrival immediate, reduce redundant detail requests, and give the UI a cleaner path for future attempt-history events without changing the pipeline state model.
+## 3. Separate completed progress from the currently running step
+
+I did not want to store the whole pipeline using only one status value such as `PENDING`, `RUNNING`, or `DONE`.
+
+Instead, I keep `completedStep` separately from the current `run` information.
+
+For example, the project can correctly represent this situation:
+
+```text
+Portraits are already complete
+Chapters is currently running
+```
+
+This is important when the user refreshes the page while a Gemini call is still running. The application still knows exactly which steps are safely completed and which step is currently active.
+
+This makes the project state slightly more complicated, but I think it is much clearer and safer for resume/recovery behavior.
+
+---
+
+## 4. Prevent duplicate Gemini calls on the server
+
+One important decision was that duplicate protection must be handled by the backend, not only by disabling a button in the browser.
+
+A frontend-only solution would work for one normal click, but it would not fully protect against:
+
+- double clicks
+- refreshing the page
+- opening the same project in another tab
+- two requests reaching the backend almost at the same time
+
+Before a Gemini step starts, the server locks the project and saves that step as `RUNNING`. If another request tries to start the same step, it sees that state and is rejected instead of making another Gemini request.
+
+I considered this especially important because duplicate Gemini calls can waste API quota and can also create inconsistent results.
+
+The downside is that if the server stops after saving `RUNNING`, the project could become stuck. Because of that, I also added stale-step recovery after a configured timeout.
+
+**AI override #2:** A simpler browser-only duplicate guard was considered, but I rejected it because it did not protect against multiple tabs or simultaneous backend requests.
+
+---
+
+## 5. Save partial progress immediately
+
+For portraits and illustrations, I decided not to wait until the whole step finishes before saving the result.
+
+Each finished image is written to disk and the project state is updated immediately.
+
+For example, if portrait 1 succeeds but portrait 2 fails, the successful first portrait is already stored. When the user retries the Portraits step, the application does not need to generate portrait 1 again.
+
+This creates a few more filesystem writes, but there are at most two portraits and one chapter in this assessment, so the extra cost is very small. The benefit is that retries are cheaper and the user can see real progress.
+
+---
+
+## 6. Do not automatically retry Gemini calls
+
+I decided that every Gemini request should only be attempted once for each user action.
+
+If Gemini fails because of quota, network problems, or another API error, the step becomes `FAILED` and the error is shown to the user. The user can then decide whether to retry that step.
+
+I did this because automatic retries could silently spend more API quota. It could also make it difficult to know how many actual attempts were made.
+
+The implementation therefore uses direct REST calls to the Gemini Files API and Interactions API, and the model names are configurable through environment variables.
+
+I originally considered using the official SDK because it is convenient, but the direct REST approach made the retry behavior more explicit and kept the integration small.
+
+**AI override #3:** ChatGPT first considered using the SDK with its normal retry behavior. I changed this to single-attempt REST calls because the assessment specifically requires no automatic Gemini retries.
+
+---
+
+## 7. Upload the book once and reuse Gemini context
+
+The book text should not be sent again for every pipeline step.
+
+When the Style step starts, the book is uploaded once using the Gemini Files API and an initial interaction is created. Later text-generation steps reuse the previous interaction ID instead of sending the complete book again.
+
+I also keep a separate image interaction chain for the portraits and chapter illustration. This helps the later images stay closer to the character appearances that were already generated.
+
+This decision reduces unnecessary input tokens and also follows the intended flow of the provided book-illustration notebook.
+
+---
+
+## 8. Enforce the assessment limits on the backend
+
+The assessment limits the result to a maximum of two adult characters and one chapter.
+
+I enforce these limits on the backend instead of trusting only the frontend or the Gemini response.
+
+The structured-output schema asks Gemini for the correct limits, but the server also applies its own final cap:
+
+```text
+Characters: maximum 2
+Chapters: maximum 1
+```
+
+This means that even if Gemini unexpectedly returns more results, or if a modified client sends a different request, the server still keeps the project inside the assessment requirements.
+
+---
+
+## 9. Use a mock Gemini client for testing
+
+I added a deterministic mock Gemini client so I could test the complete application without using API quota every time.
+
+The mock follows the same pipeline interface as the real Gemini client, so the tests can still exercise:
+
+- step ordering
+- server-side limits
+- duplicate execution protection
+- failures and retries
+- stale recovery
+- partial portrait progress
+- frontend states
+
+I still treat the mock and the real Gemini API as different things. Passing the mock tests proves that the application logic works, but it does not guarantee that a real API account has enough quota or billing enabled.
+
+---
+
+## 10. Keep authentication simple for this assessment
+
+I used a lightweight local identity based on name and email instead of building a full authentication system.
+
+The purpose is only to separate users and make sure one user cannot access another user's projects. A production application would need proper authentication, secure cookies, password/OAuth handling, and stronger session security.
+
+For this take-home assessment, I felt that implementing all of that would take time away from the pipeline behavior that is actually being evaluated.
+
+---
+
+## In the future
+
+If I had more time, I would probably replace polling with Server-Sent Events so progress updates could appear immediately when a portrait or illustration finishes.
+
+The current polling approach is simple and works correctly for this project, so I did not think adding real-time infrastructure was necessary before submission.
+
+I would also do more testing with the real Gemini image model when API quota is available, especially around model errors and image-generation response formats.
