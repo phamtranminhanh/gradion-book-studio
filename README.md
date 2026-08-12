@@ -7,6 +7,8 @@ The app intentionally stays small: one Node.js process serves the API and the br
 ## Demo
 
 ![Book Illustration Studio demo](assets/app-demo.png)
+![Book Illustration Studio demo](assets/app-generate.png)
+![Book Illustration Studio demo](assets/app-page.png)
 
 *Project workspace showing the five-step illustration pipeline, generated character portraits, and chapter artwork.*
 
