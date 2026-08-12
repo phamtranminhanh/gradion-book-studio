@@ -4,6 +4,12 @@ A local full-stack implementation of Gradion's Intern Fullstack Developer take-h
 
 The app intentionally stays small: one Node.js process serves the API and the browser UI, while users, sessions, project state, book text, and generated images are persisted on the local filesystem. There is no build step and no database service to install.
 
+## Demo
+
+![Book Illustration Studio demo](assets/app-demo.png)
+
+*Project workspace showing the five-step illustration pipeline, generated character portraits, and chapter artwork.*
+
 ## Run it
 
 ### Prerequisites
